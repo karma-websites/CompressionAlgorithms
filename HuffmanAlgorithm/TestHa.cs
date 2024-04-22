@@ -82,6 +82,17 @@ internal class TestHa
 
                 break;
 
+            case "4":
+                Console.Write("Specify the path to the source file: ");
+                dataFileName = Console.ReadLine() ?? "0";
+
+                byte[] data = WorkFile.ReadBytes(dataFileName);
+                var canonCodes = Huffman.CreateCanonCodes(data);
+
+                Huffman.PrintCanonCodes(canonCodes);
+
+                break;
+
             default:
                 Console.WriteLine("The selected function is not in the program\n");
                 break;
@@ -93,12 +104,15 @@ internal class TestHa
 
     private static void PrintMenu()
     {
+        Console.ForegroundColor = ConsoleColor.DarkBlue;
         Console.WriteLine("Menu");
         Console.WriteLine("0. Exit");
         Console.WriteLine("1. Compress the file");
         Console.WriteLine("2. Decompress the file");
         Console.WriteLine("3. Compare files");
+        Console.WriteLine("4. Get canonical Huffman codes");
         Console.Write("Select a function: ");
+        Console.ForegroundColor = ConsoleColor.White;
     }
 
     private static void CompressFile(string dataFileName, string archFileName)
@@ -114,8 +128,8 @@ internal class TestHa
 
         Console.WriteLine($"Compressed file {archFileName} was received\n");
 
-        Console.WriteLine($"Compression time: {stopwatch.ElapsedMilliseconds} ms\n");
         Huffman.PrintFreqTable(arch);
+        Console.WriteLine($"Compression time: {stopwatch.ElapsedMilliseconds} ms");
         Console.WriteLine($"Source size:   {data.Length} byte");
         Console.WriteLine($"Compressed size: {arch.Length} byte");
         float compressPercent = (data.Length - (float)arch.Length) / data.Length * 100;

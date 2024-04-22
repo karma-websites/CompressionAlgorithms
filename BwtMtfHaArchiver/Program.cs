@@ -93,12 +93,14 @@ internal class Program
 
     private static void PrintMenu()
     {
+        Console.ForegroundColor = ConsoleColor.DarkBlue;
         Console.WriteLine("Menu");
         Console.WriteLine("0. Exit");
         Console.WriteLine("1. Compress the file");
         Console.WriteLine("2. Decompress the file");
         Console.WriteLine("3. Compare files");
         Console.Write("Select a function: ");
+        Console.ForegroundColor = ConsoleColor.White;
     }
 
     private static void CompressFile(string dataFileName, string archFileName)

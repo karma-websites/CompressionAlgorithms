@@ -2,7 +2,7 @@
 
 internal class BwtByte
 {
-    public static int BlockSize { get; set; } = ushort.MaxValue;
+    public static int BlockSize { get; set; } = 100000;
 
     private static int CompareCyclicShifts(int x, int y, byte[] inputData)
     {
@@ -20,7 +20,7 @@ internal class BwtByte
         return 0;
     }
 
-    public static (byte[], ushort) Direct(byte[] inputData)
+    public static (byte[], int) Direct(byte[] inputData)
     {
         int lengthData = inputData.Length;
 
@@ -29,8 +29,8 @@ internal class BwtByte
         Array.Sort(cyclicShifts, (x, y) => CompareCyclicShifts(x, y, inputData));
 
         byte[] result = new byte[lengthData];
-        ushort number = 0;
-        for (ushort i = 0; i < lengthData; i++)
+        int number = 0;
+        for (int i = 0; i < lengthData; i++)
         {
             result[i] = inputData[(cyclicShifts[i] + lengthData - 1) % lengthData];
             if (cyclicShifts[i] == 0) number = i;
@@ -57,7 +57,7 @@ internal class BwtByte
         }
     }
 
-    public static byte[] Inverse(byte[] bwt, ushort number)
+    public static byte[] Inverse(byte[] bwt, int number)
     {
         int lengthBwt = bwt.Length;
 
@@ -85,8 +85,8 @@ internal class BwtByte
 
     public static byte[] DirectData(byte[] data)
     {
-        if (BlockSize > ushort.MaxValue)
-            throw new Exception("The maximum block size (ushort.MaxValue) for the BWT algorithm has been exceeded");
+        if (BlockSize > int.MaxValue)
+            throw new Exception("The maximum block size (int.MaxValue) for the BWT algorithm has been exceeded");
         if (BlockSize < 0)
             throw new Exception("Invalid block size for the BWT algorithm");
 
@@ -103,7 +103,7 @@ internal class BwtByte
             }
             Array.Copy(data, dataPosition, buffer, 0, buffer.Length);
 
-            (byte[] encodeData, ushort number) = Direct(buffer);
+            (byte[] encodeData, int number) = Direct(buffer);
 
             byte[] numberBytes = BitConverter.GetBytes(number);
             transformData.AddRange(numberBytes);
@@ -124,11 +124,11 @@ internal class BwtByte
 
         while (dataPosition < dataLength)
         {
-            byte[] numberBytes = new byte[sizeof(ushort)];
+            byte[] numberBytes = new byte[sizeof(int)];
             Array.Copy(data, dataPosition, numberBytes, 0, numberBytes.Length);
-            ushort number = BitConverter.ToUInt16(numberBytes);
+            int number = BitConverter.ToInt32(numberBytes);
 
-            dataPosition += sizeof(ushort);
+            dataPosition += sizeof(int);
 
             byte[] buffer = new byte[BlockSize];
             if (dataLength - dataPosition < BlockSize)

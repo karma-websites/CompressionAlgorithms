@@ -15,7 +15,7 @@ internal class TestMtf
     {
         Console.WriteLine("Testing the MTF algorithm\n");
 
-        string[] testInputs = ["bbbbbcccccdddddaaaaa", "bananaaa", "hiphophiphop", "ABC$BAAA"];
+        string[] testInputs = ["bbbbbcccccdddddaaaaa", "bananaaa", "hiphophiphop", "ABC$BAAA", "abracadabra"];
         foreach (string s in testInputs)
         {
             byte[] input = Encoding.UTF8.GetBytes(s);

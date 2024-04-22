@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Text;
+using System.Threading.Channels;
 
 namespace BwtAlgorithm;
 
@@ -24,7 +25,7 @@ internal class TestBwt
 
         //Test1(testInputs[0]);
         //Test2(testInputs[0]);
-        Test3(inputText);
+        //Test3(inputText);
 
         /*for (int i = 2; i < 3; i++)
         {
@@ -167,7 +168,6 @@ internal class TestBwt
             Console.WriteLine($"Error: {ex.Message}");
         }
     }
-
 
     private static bool CompareFiles(string filePath1, string filePath2)
     {

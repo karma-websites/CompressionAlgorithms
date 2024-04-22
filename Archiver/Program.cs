@@ -93,12 +93,14 @@ internal class Program
 
     private static void PrintMenu()
     {
+        Console.ForegroundColor = ConsoleColor.DarkBlue;
         Console.WriteLine("Menu");
         Console.WriteLine("0. Exit");
         Console.WriteLine("1. Compress the file");
         Console.WriteLine("2. Decompress the file");
         Console.WriteLine("3. Compare files");
         Console.Write("Select a function: ");
+        Console.ForegroundColor = ConsoleColor.White;
     }
 
     private static void CompressFile(string dataFileName, string archFileName)
@@ -153,9 +155,6 @@ internal class Program
         Console.WriteLine($"Compressed size: {arch.Length} byte");
         float compressPercent = (data.Length - (float)arch.Length) / data.Length * 100;
         Console.WriteLine($"Compression percentage: {compressPercent:f} %");
-        StatisticsFile statistics = new(dataFileName);
-        Console.WriteLine($"The entropy of the source file: {statistics.Entropy():f} bit");
-        Console.WriteLine($"Average length of a code symbol in a compressed file: {averageLength:f} bit\n");
     }
 
     private static void DecompressFile(string archFileName, string dataFileName)
@@ -173,7 +172,7 @@ internal class Program
 
         stopwatch.Restart();
         byte[] rleData = Huffman.Decompress(arch);
-        Console.WriteLine($"{"{Inverse HUFFMAN size data: ", -50} {rleData.Length} byte. \tWorking time: {stopwatch.ElapsedMilliseconds} ms");
+        Console.WriteLine($"{"Inverse HUFFMAN size data: ", -50} {rleData.Length} byte. \tWorking time: {stopwatch.ElapsedMilliseconds} ms");
 
         stopwatch.Restart();
         byte[] mtfData = Rle.Decompress(rleData);
@@ -181,7 +180,7 @@ internal class Program
 
         stopwatch.Restart();
         byte[] bwtData = Mtf.Decode(mtfData);
-        Console.WriteLine($"{$"Inverse Mtf size data: ", -50} {bwtData.Length} byte. \tWorking time: {stopwatch.ElapsedMilliseconds} ms");
+        Console.WriteLine($"{$"Inverse MTF size data: ", -50} {bwtData.Length} byte. \tWorking time: {stopwatch.ElapsedMilliseconds} ms");
 
         stopwatch.Restart();
         byte[] rleData2 = BwtByte.InverseData(bwtData);

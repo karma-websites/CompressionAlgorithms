@@ -1,4 +1,6 @@
-﻿namespace SuperArchiver;
+﻿using System;
+
+namespace SuperArchiver;
 
 internal class Mtf
 {

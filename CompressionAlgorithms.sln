@@ -25,7 +25,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Lz77Algorithm", "Lz77Algori
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BwtRleArchiver", "BwtRleArchiver\BwtRleArchiver.csproj", "{41CD39D2-2B03-4A0C-A5FA-670904D634C3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BwtMtfHaArchiver", "BwtMtfHaArchiver\BwtMtfHaArchiver.csproj", "{F5B112F9-A04F-41D5-854A-4226F9F99DF4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BwtMtfHaArchiver", "BwtMtfHaArchiver\BwtMtfHaArchiver.csproj", "{F5B112F9-A04F-41D5-854A-4226F9F99DF4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

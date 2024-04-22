@@ -127,6 +127,80 @@ internal class Huffman
         return newBytesFreqs;
     }
 
+    public struct Code
+    {
+        public byte symbol;
+        public string code;
+    }
+
+    private static int CompareCodes(Code code1, Code code2)
+    {
+        if (code1.code.Length != code2.code.Length)
+        {
+            return code1.code.Length - code2.code.Length;
+        }
+        else
+        {
+            return code1.symbol - code2.symbol;
+        }
+    }
+
+    public static Code[] CreateCanonCodes(byte[] data)
+    {
+        byte[] freqs = CalculateFreq(data);
+        Node root = CreateHuffmanTree(freqs);
+        string[] codes = CreateHuffmanCode(root);
+        Code[] canonCodes = new Code[codes.Count(i => i != null)];
+        FillCanonCodes(canonCodes, codes);
+
+        Array.Sort(canonCodes, CompareCodes);
+
+        int intCode = 0, currCodeLen = 0, nextCodeLen = 0;
+        for (int i = 0; i < canonCodes.Length; i++)
+        {
+            currCodeLen = canonCodes[i].code.Length;
+
+            string stringCode = Convert.ToString(intCode, 2);
+
+            int stringCodeLen = stringCode.Length;
+            for (int j = 0; j < 32 - stringCodeLen; j++) stringCode = "0" + stringCode;
+
+            canonCodes[i].code = stringCode[(32 - currCodeLen)..];
+
+            if (i == canonCodes.Length - 1) nextCodeLen = currCodeLen;
+            else nextCodeLen = canonCodes[i + 1].code.Length;
+
+            intCode = (intCode + 1) << (nextCodeLen - currCodeLen);
+        }
+
+        return canonCodes;
+    }
+
+    private static void FillCanonCodes(Code[] canonCodes, string[] codes)
+    {
+        int countCanonCodes = 0;
+        for (int i = 0; i < codes.Length; i++)
+        {
+            if (codes[i] != null)
+            {
+                canonCodes[countCanonCodes].symbol = (byte)i;
+                canonCodes[countCanonCodes++].code = codes[i];
+            }
+        }
+    }
+
+    public static void PrintCanonCodes(Code[] canonCodes)
+    {
+        Console.WriteLine();
+        for (int i = 0; i < canonCodes.Length; i++)
+        {
+            Console.Write($"{i + 1,3}. {canonCodes[i].symbol,3}  ");
+            Console.WriteLine($"{(char)canonCodes[i].symbol} - {canonCodes[i].code}");
+        }
+        Console.WriteLine();
+    }
+
+
     private static double CalculateAverageCodeLength(byte[] data, string[] codes)
     {
         int[] intFreqs = new int[byte.MaxValue + 1];

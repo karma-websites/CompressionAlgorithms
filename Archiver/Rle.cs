@@ -23,11 +23,12 @@ internal class Rle
         {
             if (arch[i] == specialByte)
             {
-                for (int j = 0; j < arch[i + 1]; j++)
+                ushort number = BitConverter.ToUInt16(arch, i + 1);
+                for (int j = 0; j < number; j++)
                 {
-                    decompressData.Add(arch[i + 2]);
+                    decompressData.Add(arch[i + 3]);
                 }
-                i += 3;
+                i += 4;
             }
             else
             {
@@ -44,7 +45,8 @@ internal class Rle
         byte specialByte = CalculateSpecialByte(data);
         List<byte> compressData = [];
         compressData.Add(specialByte);
-        byte count = 1;
+        ushort count = 1;
+        byte[] bytes;
 
         for (int i = 0; i < data.Length; i++)
         {
@@ -52,12 +54,13 @@ internal class Rle
             {
                 count++;
                 i++;
-                if (count == byte.MaxValue) break;
+                if (count == ushort.MaxValue) break;
             }
-            if (count > 3)
+            if (count > 4)
             {
                 compressData.Add(specialByte);
-                compressData.Add(count);
+                bytes = BitConverter.GetBytes(count);
+                compressData.AddRange(bytes);
                 compressData.Add(data[i]);
             }
             else
@@ -65,7 +68,8 @@ internal class Rle
                 if (data[i] == specialByte)
                 {
                     compressData.Add(specialByte);
-                    compressData.Add(count);
+                    bytes = BitConverter.GetBytes(count);
+                    compressData.AddRange(bytes);
                     count = 1;
                 }
                 for (int j = 0; j < count; j++)

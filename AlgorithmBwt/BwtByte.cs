@@ -4,7 +4,6 @@ internal class BwtByte
 {
     public static int BlockSize { get; set; } = 5000;
 
-
     public static double EfficiencyFactor(byte[] inputData)
     {
         int totalSequenceLength = 0;
@@ -39,7 +38,6 @@ internal class BwtByte
 
         return (double)(totalSequenceLength - 3 * numberSequences) / (textLength + lengthNumbers);
     }
-
 
     private static int CompareByteArrays(byte[] x, byte[] y)
     {
@@ -76,7 +74,6 @@ internal class BwtByte
         return (result, number);
     }
 
-
     private static int CompareCyclicShifts(int x, int y, byte[] inputData)
     {
         int lengthData = inputData.Length;
@@ -112,7 +109,6 @@ internal class BwtByte
         return (result, number);
     }
 
-   
     private struct Pairs
     {
         public int Index;
@@ -152,7 +148,7 @@ internal class BwtByte
             result[i] = bwt[position];
         }
 
-        return result;
+        return result.SkipLast(1).ToArray();
     }
 
 
@@ -160,81 +156,65 @@ internal class BwtByte
 
     public static void DirectData(string pathInFile, string pathOutFile)
     {
-        try
+        using FileStream inputFile = new(pathInFile, FileMode.Open, FileAccess.Read);
+        using FileStream outputFile = new(pathOutFile, FileMode.Create, FileAccess.Write);
+
+        long fileSize = inputFile.Length;
+        long position = 0;
+
+        while (position < fileSize)
         {
-            using FileStream inputFile = new(pathInFile, FileMode.Open, FileAccess.Read);
-            using FileStream outputFile = new(pathOutFile, FileMode.Create, FileAccess.Write);
+            byte[] buffer = new byte[BlockSize];
+            int bytesRead = inputFile.Read(buffer);
 
-            long fileSize = inputFile.Length;
-            long position = 0;
-
-            while (position < fileSize)
+            if (buffer.Length != bytesRead)
             {
-                byte[] buffer = new byte[BlockSize];
-                int bytesRead = inputFile.Read(buffer);
-
-                if (buffer.Length != bytesRead)
-                {
-                    buffer = buffer.Take(bytesRead).ToArray();
-                }
-
-                (byte[] encodeData, ushort number) = DirectVer2(buffer);
-
-                byte[] numberBytes = BitConverter.GetBytes(number);
-                outputFile.Write(numberBytes);
-
-                outputFile.Write(encodeData);
-               
-                position += bytesRead;
+                buffer = buffer.Take(bytesRead).ToArray();
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
+
+            (byte[] encodeData, ushort number) = DirectVer2(buffer);
+
+            byte[] numberBytes = BitConverter.GetBytes(number);
+            outputFile.Write(numberBytes);
+
+            outputFile.Write(encodeData);
+               
+            position += bytesRead;
         }
     }
-
 
     public static void InverseData(string pathInFile, string pathOutFile)
     {
-        try
+        if (BlockSize > ushort.MaxValue)
+            throw new Exception("The maximum block size (ushort.MaxValue) for the BWT algorithm has been exceeded");
+        if (BlockSize < 0)
+            throw new Exception("Invalid block size for the BWT algorithm");
+
+        using FileStream inputFile = new(pathInFile, FileMode.Open, FileAccess.Read);
+        using FileStream outputFile = new(pathOutFile, FileMode.Create, FileAccess.Write);
+
+        long fileSize = inputFile.Length;
+        long position = 0;
+
+        while (position < fileSize)
         {
-            if (BlockSize > ushort.MaxValue)
-                throw new Exception("The maximum block size (ushort.MaxValue) for the BWT algorithm has been exceeded");
-            if (BlockSize < 0)
-                throw new Exception("Invalid block size for the BWT algorithm");
+            byte[] numberBytes = new byte[sizeof(ushort)];
+            inputFile.Read(numberBytes);
+            ushort number = BitConverter.ToUInt16(numberBytes);
 
-            using FileStream inputFile = new(pathInFile, FileMode.Open, FileAccess.Read);
-            using FileStream outputFile = new(pathOutFile, FileMode.Create, FileAccess.Write);
+            byte[] buffer = new byte[BlockSize];
+            int bytesRead = inputFile.Read(buffer);
 
-            long fileSize = inputFile.Length;
-            long position = 0;
-
-            while (position < fileSize)
+            if (buffer.Length != bytesRead)
             {
-                byte[] numberBytes = new byte[sizeof(ushort)];
-                inputFile.Read(numberBytes);
-                ushort number = BitConverter.ToUInt16(numberBytes);
-
-                byte[] buffer = new byte[BlockSize];
-                int bytesRead = inputFile.Read(buffer);
-
-                if (buffer.Length != bytesRead)
-                {
-                    buffer = buffer.Take(bytesRead).ToArray();
-                }
-
-                outputFile.Write(InverseVer2(buffer, number));
-
-                position += bytesRead + sizeof(ushort);
+                buffer = buffer.Take(bytesRead).ToArray();
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
+
+            outputFile.Write(InverseVer2(buffer, number));
+
+            position += bytesRead + sizeof(ushort);
         }
     }
-
 
     public static void PrintByteArray(byte[] input, Func<byte, object>? format = null)
     {
