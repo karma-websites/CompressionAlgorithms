@@ -1,465 +1,388 @@
 ﻿namespace Lz77Algorithm;
 
-using System;
-using System.IO;
-using System.Text;
-
-public static class Lzss
+internal class Lz77
 {
-    private static readonly char[] SlidingWindow = new char[Constants.WindowSize];
-    private static readonly char[] UncodedLookahead = new char[Constants.MaxCoded]; // Characters to be encoded
+    const int WindowSize = 4095; // 4095
+    const int BufferSize = 15;   // 15
+    static readonly int OffsetBits = (int)Math.Ceiling(Math.Log2(WindowSize + 1));
+    static readonly int LengthBits = (int)Math.Ceiling(Math.Log2(BufferSize + 1));
+    static readonly int PairBits = OffsetBits + LengthBits;
 
-    private static readonly int[] HashTable = new int[Constants.HashSize]; // List head for each hask key
-    private static readonly int[] Next = new int[Constants.WindowSize]; // Indices of next elements in the hash list
-
-    public static void Encode(string inputFileNameForEncode, string outputFileNameForEncode)
+    private readonly struct Node(int offset, int length, byte next = 0)
     {
-        using var reader = new StreamReader(inputFileNameForEncode);
-        using var writer = new StreamWriter(outputFileNameForEncode, false, Encoding.UTF8);
-        var readChar = 0;
+        public int Offset { get; } = offset;
+        public int Length { get; } = length;
+        public byte Symbol { get; } = next;
 
-        // Copy MAX_CODED bytes from the input file into the uncoded lookahead buffer
-        var length = 0; // Length of string
-        for (length = 0; length < Constants.MaxCoded; length++)
+        public override readonly string ToString()
         {
-            readChar = reader.Read();
-            if (readChar == -1) break;
-
-            UncodedLookahead[length] = (char)readChar;
+            return $"({Offset} {Length} {Symbol})";
         }
+    }
 
-        InitializeDataStructures();
+    public static byte[] Compress(byte[] data)
+    {
+        List<Node> encodedList = [];
+        int pos = 0;
 
-        // 8 code flags and encoded strings
-        var flags = 0;
-        var flagPosition = 1;
-        var encodedData = new char[16];
-        var nextEncoded = 0; // Encoded data next index
-
-        var windowHead = 0; // Head of sliding window
-        var uncodedHead = 0; // Head of uncoded lookahead
-
-        var i = 0;
-
-        var matchData = FindMatch(uncodedHead);
-
-        // Now encoding the rest of the file
-        while (length > 0)
+        while (pos < data.Length)
         {
-            // Garbage beyond last data expands match length
-            if (matchData.Length > length)
+            FindMatch(data, pos, out int offset, out int length);
+
+            if (offset == 0 && length == 0 || length * 8 <= PairBits)
             {
-                matchData.Length = length;
-            }
-
-            // Not long enough match -> write uncoded byte
-            if (matchData.Length <= Constants.MaxUncoded)
-            {
-                matchData.Length = 1; // Set to 1 for 1 byte uncoded
-                flags |= flagPosition; // Mark with uncoded byte flag
-                encodedData[nextEncoded] = UncodedLookahead[uncodedHead];
-                nextEncoded++;
-            }
-            else // match.Length > MAX_UNCODED -> encode as offset and length
-            {
-                encodedData[nextEncoded] = (char)((matchData.Offset & 0x0FFF) >> 4);
-                nextEncoded++;
-
-                encodedData[nextEncoded] = (char)(((matchData.Offset & 0x000F) << 4) |
-                    (matchData.Length - (Constants.MaxUncoded + 1)));
-                nextEncoded++;
-            }
-
-            // We have 8 code flags -> write out flags and code buffer
-            if (flagPosition == 0x80)
-            {
-                //Console.WriteLine("Offset: " + matchData.Offset + " Length: " + matchData.Length);
-
-                writer.Write((char)flags);
-                for (i = 0; i < nextEncoded; i++)
-                {
-                    writer.Write(encodedData[i]); // Writing the encoded data to the output file
-                }
-
-                flags = 0;
-                flagPosition = 1;
-                nextEncoded = 0;
+                encodedList.Add(new Node(0, 0, data[pos]));
+                pos += 1;
             }
             else
             {
-                flagPosition <<= 1;
-            }
-
-            // Replace the matchData.Length worth of bytes we've matched in the
-            // sliding window with new bytes from the input file
-            i = 0;
-            while (i < matchData.Length)
-            {
-                readChar = reader.Read();
-                if (readChar == -1) break;
-
-                // Add old byte into sliding window and new into lookahead
-                ReplaceChar(windowHead, UncodedLookahead[uncodedHead]);
-                UncodedLookahead[uncodedHead] = (char)readChar;
-                windowHead = (windowHead + 1) % Constants.WindowSize;
-                uncodedHead = (uncodedHead + 1) % Constants.MaxCoded;
-                i++;
-            }
-
-            // Handle case where we reach the end of file before filling lookahead
-            while (i < matchData.Length)
-            {
-                ReplaceChar(windowHead, UncodedLookahead[uncodedHead]);
-
-                // Nothing to add to lookahead here
-                windowHead = (windowHead + 1) % Constants.WindowSize;
-                uncodedHead = (uncodedHead + 1) % Constants.MaxCoded;
-                length--;
-                i++;
-            }
-
-            // Find match for the remaining characters
-            matchData = FindMatch(uncodedHead);
-
-            //PrintSlidingWindow();
-            //PrintUncodedLookahead();
-            //Console.WriteLine();
-        }
-
-        // Write out any remaining encoded data
-        if (nextEncoded != 0)
-        {
-            writer.Write((char)flags);
-            for (i = 0; i < nextEncoded; i++)
-            {
-                writer.Write(encodedData[i]);
+                encodedList.Add(new Node(offset, length - 1));
+                pos += length;
             }
         }
+
+        return PairsToBytes2(encodedList);
     }
 
-    public struct EncodedString
+    public static byte[] Decompress(byte[] encodedData)
     {
-        // Offset to start of longest match
-        public int Offset { get; set; }
+        List<Node> encodedList = BytesToPairs2(encodedData);
+        List<byte> result = [];
 
-        // Length of longest match
-        public int Length { get; set; }
-    }
-
-    public static void Decode(string inputFileNameForDecode, string outputFileNameForDecode)
-    {
-        using var reader = new StreamReader(inputFileNameForDecode);
-        using var writer = new StreamWriter(outputFileNameForDecode);
-
-        InitializeDataStructures();
-
-        var flags = 0; // Encoded flag
-        var flagsUsed = 7; // Not encoded flag
-        var nextChar = 0; // Next char in sliding window
-        var code = new EncodedString();
-
-        while (true)
+        foreach (var elem in encodedList)
         {
-            flags >>= 1;
-            flagsUsed++;
-
-            // Shifted out all the flag bits -> read a new flag
-            var readChar = 0;
-            if (flagsUsed == 8)
+            if (elem.Offset == 0 && elem.Length == 0)
             {
-                if ((readChar = reader.Read()) == -1)
-                {
-                    break;
-                }
-
-                flags = readChar & 0xFF;
-                flagsUsed = 0;
-            }
-
-            // Uncoded character
-            if ((flags & 1) != 0)
-            {
-                if ((readChar = reader.Read()) == -1)
-                {
-                    break;
-                }
-
-                // Write out byte and put it in sliding window
-                writer.Write((char)readChar);
-                SlidingWindow[nextChar] = (char)readChar;
-                nextChar = (nextChar + 1) % Constants.WindowSize;
+                result.Add(elem.Symbol);
             }
             else
             {
-                if ((code.Offset = reader.Read()) == -1)
+                int startIndex = result.Count - elem.Offset;
+                if (elem.Offset >= elem.Length)
                 {
-                    break;
+                    result.AddRange(result[startIndex..(startIndex + elem.Length + 1)]);
                 }
-
-                if ((code.Length = reader.Read()) == -1)
+                else
                 {
-                    break;
-                }
-
-                // Unpack offset and length
-                code.Offset <<= 4;
-                code.Offset |= (code.Length & 0x00F0) >> 4;
-                code.Length = (code.Length & 0x000F) + Constants.MaxUncoded + 1;
-
-                // Write out decoded string to file and lookahead
-                for (var i = 0; i < code.Length; i++)
-                {
-                    readChar = SlidingWindow[(code.Offset + i) % Constants.WindowSize];
-                    writer.Write((char)readChar);
-                    UncodedLookahead[i] = (char)readChar;
-                }
-
-                // Write out decoded string to sliding window
-                for (var i = 0; i < code.Length; i++)
-                {
-                    SlidingWindow[(nextChar + i) % Constants.WindowSize] = UncodedLookahead[i];
-                }
-
-                nextChar = (nextChar + code.Length) % Constants.WindowSize;
-
-                // PrintSlidingWindow();
-                // PrintUncodedLookahead();
-                // Console.WriteLine();
-            }
-        }
-    }
-
-    /// <summary>
-    /// This method generates a hash key for a (MAX_UNCODED + 1)
-    /// long string located either in the sliding window or in the
-    /// uncoded lookahead
-    /// </summary>
-    /// <param name="offset">Shows the offset from the start of the window</param>
-    /// <param name="isInLookahead">Initiates if the hash key is for the 
-    /// uncodedLookahead or for the slidingWindow</param>
-    /// <returns>A hash key for the offset in the sliding windows or in the lookahead</returns>
-    private static int GetHashKey(int offset, bool isInLookahead)
-    {
-        var hashKey = 0;
-
-        if (isInLookahead)
-        {
-            for (var i = 0; i < Constants.MaxUncoded + 1; i++)
-            {
-                hashKey = (hashKey << 5) ^ UncodedLookahead[offset];
-                hashKey %= Constants.HashSize;
-                offset = (offset + 1) % Constants.MaxCoded;
-            }
-        }
-        else
-        {
-            for (var i = 0; i < Constants.MaxUncoded + 1; i++)
-            {
-                hashKey = (hashKey << 5) ^ SlidingWindow[offset];
-                hashKey %= Constants.HashSize;
-                offset = (offset + 1) % Constants.WindowSize;
-            }
-        }
-
-        return hashKey;
-    }
-
-    /// <summary>
-    /// This method searches through the slidingWindow
-    /// dictionary for the longest sequence matching the MAX_CODED
-    /// long string stored in the uncodedLookahead
-    /// </summary>
-    /// <param name="uncodedHead">Index of the character from which the coding begins</param>
-    private static EncodedString FindMatch(int uncodedHead)
-    {
-        var matchData = new EncodedString();
-
-        var i = HashTable[GetHashKey(uncodedHead, true)];
-        var j = 0;
-
-        while (i != Constants.NullIndex)
-        {
-            // We've matched the first symbol
-            if (SlidingWindow[i] == UncodedLookahead[uncodedHead])
-            {
-                j = 1;
-
-                while (SlidingWindow[(i + j) % Constants.WindowSize] ==
-                    UncodedLookahead[(uncodedHead + j) % Constants.MaxCoded])
-                {
-                    if (j >= Constants.MaxCoded)
+                    int i = elem.Length + 1;
+                    while (i > 0)
                     {
-                        break;
+                        int length = Math.Min(i, elem.Offset);
+                        result.AddRange(result[startIndex..(startIndex + length)]);
+                        i -= elem.Offset;
                     }
-
-                    j++;
-                }
-
-                if (j > matchData.Length)
-                {
-                    matchData.Length = j;
-                    matchData.Offset = i;
                 }
             }
+        }
 
-            if (j >= Constants.MaxCoded)
+        return [.. result];
+    }
+
+    private static void FindMatch(byte[] data, int pos, out int offset, out int length)
+    {
+        offset = 0;
+        length = 0;
+
+        int bestOffset = -1;
+        int bestLength = -1;
+
+        int startWindow = Math.Max(pos - WindowSize, 0);
+        int indexWindow = 0;
+        int endBuffer = Math.Min(pos + BufferSize + 1, data.Length) + 1;
+
+        for (int j = pos + 3; j < endBuffer; j++)
+        {
+            indexWindow = IndexOf(startWindow + indexWindow, pos, j, data);
+
+            if (indexWindow != -1)
             {
-                matchData.Length = Constants.MaxCoded;
-                break;
+                bestOffset = pos - startWindow - indexWindow;
+                bestLength = j - pos;
+            }
+            else break;
+        }
+
+        if (bestOffset > 0 && bestLength > 0)
+        {
+            offset = bestOffset;
+            length = bestLength;
+        }
+    }
+
+    private static int IndexOf(int startWindow, int pos, int endBuffer, byte[] data)
+    {
+        int windowLength = pos - startWindow;
+        int bufferLength = endBuffer - pos;
+
+        if (windowLength < bufferLength) return -1;
+
+        ulong p = 3;
+        ulong windowHash = 0;
+        ulong bufferHash = 0;
+        ulong maxPower = 1;
+
+        for (int i = 0; i < bufferLength; i++)
+        {
+            windowHash = windowHash * p + data[startWindow + i];
+            bufferHash = bufferHash * p + data[pos + i];
+            if (i != bufferLength - 1) maxPower *= p;
+        }
+
+        for (int i = 0; i < windowLength - bufferLength; i++)
+        {
+            if (windowHash == bufferHash)
+            {
+                if (Equals(startWindow, pos, endBuffer, data, i)) return i;
             }
 
-            i = Next[i];
+            windowHash -= data[startWindow + i] * maxPower;
+            windowHash = windowHash * p + data[startWindow + bufferLength + i];
         }
 
-        return matchData;
+        return -1;
     }
 
-    /// <summary>
-    /// This method adds the (MAX_UNCODED + 1) long string
-    /// starting at slidingWindow[charIndex] to the hash table's
-    /// linked list associated with its hash key
-    /// </summary>
-    /// <param name="charIndex">Sliding window index of the string to be
-    /// added to the linked list</param>
-    private static void AddString(int charIndex)
+    private static bool Equals(int startWindow, int pos, int endBuffer, byte[] data, int index)
     {
-        // Inserted character will be at the end of the list
-        Next[charIndex] = Constants.NullIndex;
-
-        var hashKey = GetHashKey(charIndex, false);
-
-        // This is the only character in the list
-        if (HashTable[hashKey] == Constants.NullIndex)
+        int bufferLength = endBuffer - pos;
+        for (int i = 0; i < bufferLength; i++)
         {
-            HashTable[hashKey] = charIndex;
-            return;
+            if (data[startWindow + index + i] != data[pos + i]) return false;
         }
 
-        // Find the end of the list
-        var i = HashTable[hashKey];
-        while (Next[i] != Constants.NullIndex)
-        {
-            i = Next[i];
-        }
-
-        // Add new character to the list end
-        Next[i] = charIndex;
+        return true;
     }
 
-    /// <summary>
-    /// This method removes the (MAX_UNCODED + 1) long string
-    /// starting at SlidingWindow[charIndex] from the hash table's
-    /// linked list associated with its hash key
-    /// </summary>
-    /// <param name="charIndex">Sliding window index of the string 
-    /// to be removed from the linked list</param>
-    private static void RemoveString(int charIndex)
+    private static List<Node> BytesToPairs2(byte[] data)
     {
-        var nextIndex = Next[charIndex];
-        Next[charIndex] = Constants.NullIndex;
+        byte emptyBits = data[0];
+        List<Node> listPairs = [];
+        bool[] bits = [.. BytesToBits(data)];
 
-        var hashKey = GetHashKey(charIndex, false);
-
-        // We're deleting a list head
-        if (HashTable[hashKey] == charIndex)
+        int i = 8;
+        while (i < bits.Length - emptyBits)
         {
-            HashTable[hashKey] = nextIndex;
-            return;
+            byte symbol = 0;
+            int offset = 0;
+            int length = 0;
+
+            if (bits[i] == false)
+            {
+                i++;
+                for (byte j = 0, bit = (byte)Math.Pow(2, 7); j < 8; j++, bit >>= 1)
+                {
+                    if (bits[i + j] == true) symbol |= bit;
+                }
+                i += 8;
+                listPairs.Add(new Node(0, 0, symbol));
+            }
+            else
+            {
+                i++;
+                for (int j = 0, bit = (int)Math.Pow(2, OffsetBits - 1); j < OffsetBits; j++, bit >>= 1)
+                {
+                    if (bits[i + j] == true) offset |= bit;
+                }
+                i += OffsetBits;
+                for (int j = 0, bit = (int)Math.Pow(2, LengthBits - 1); j < LengthBits; j++, bit >>= 1)
+                {
+                    if (bits[i + j] == true) length |= bit;
+                }
+                i += LengthBits;
+                listPairs.Add(new Node(offset, length));
+            }
         }
 
-        // Find character pointing to ours
-        var i = HashTable[hashKey];
-        while (Next[i] != charIndex)
-        {
-            i = Next[i];
-        }
-
-        Next[i] = nextIndex;
+        return listPairs;
     }
 
-    /// <summary>
-    /// This method replaces the character stored in slidingWindow[charIndex] 
-    /// with the one specified by replacement
-    /// </summary>
-    /// <param name="charIndex">The index in of the character in the sliding 
-    /// window which will be replaced</param>
-    /// <param name="newChar">The replacement character</param>
-    private static void ReplaceChar(int charIndex, char newChar)
+    private static byte[] PairsToBytes2(List<Node> listPairs)
     {
-        var firstIndex = charIndex - Constants.MaxUncoded - 1;
-        if (firstIndex < 0)
+        List<bool> listBits = [];
+
+        foreach (Node elem in listPairs)
         {
-            firstIndex += Constants.WindowSize;
+            if (elem.Offset == 0 && elem.Length == 0) // Pair: (0, 0, symbol)
+            {
+                listBits.Add(false);
+                for (int i = 0, bit = (int)Math.Pow(2, 7); i < 8; i++, bit >>= 1)
+                {
+                    listBits.Add((elem.Symbol & bit) != 0);
+                }
+            }
+            else // Pair: (number1, number2, void)
+            {
+                listBits.Add(true);
+                for (int i = 0, bit = (int)Math.Pow(2, OffsetBits - 1); i < OffsetBits; i++, bit >>= 1)
+                {
+                    listBits.Add((elem.Offset & bit) != 0);
+                }
+                for (int i = 0, bit = (int)Math.Pow(2, LengthBits - 1); i < LengthBits; i++, bit >>= 1)
+                {
+                    listBits.Add((elem.Length & bit) != 0);
+                }
+            }
         }
 
-        // Remove all hash entries containing character at charIndex
-        for (var i = 0; i < Constants.MaxUncoded + 1; i++)
-        {
-            RemoveString((firstIndex + i) % Constants.WindowSize);
-        }
+        byte emptyBits = (byte)(8 - listBits.Count % 8);
 
-        SlidingWindow[charIndex] = newChar;
-
-        for (var i = 0; i < Constants.MaxUncoded + 1; i++)
-        {
-            AddString((firstIndex + i) % Constants.WindowSize);
-        }
+        return BitsToBytes(listBits, emptyBits);
     }
 
-    /// <summary>
-    /// This method initialized all data structures to be used
-    /// </summary>
-    private static void InitializeDataStructures()
+    public static byte[] BitsToBytes(List<bool> listBits, byte emptyBits)
     {
-        // Initializing the sliding window with same values which means 
-        // there is only 1 hash key for the entier sliding window
-        for (var i = 0; i < Constants.WindowSize; i++)
+        int numBytes = (listBits.Count + 7) / 8;
+        byte[] bytes = new byte[numBytes + 1];
+        bytes[0] = emptyBits;
+
+        int i = 0;
+        foreach (var bit in listBits)
         {
-            SlidingWindow[i] = ' ';
-            Next[i] = i + 1;
+            int byteIndex = i / 8;
+            int bitIndex = i % 8;
+
+            if (listBits[i++])
+            {
+                bytes[byteIndex + 1] |= (byte)(1 << (7 - bitIndex));
+            }
         }
 
-        // There is no next for the last character
-        Next[Constants.WindowSize - 1] = Constants.NullIndex;
-
-        // The only list now is the list with spaces
-        for (var i = 0; i < Constants.HashSize; i++)
-        {
-            HashTable[i] = Constants.NullIndex;
-        }
-
-        HashTable[GetHashKey(0, false)] = 0;
+        return bytes;
     }
 
-    private static void PrintUncodedLookahead()
+    private static List<bool> BytesToBits(byte[] bytes)
     {
-        for (var i = 0; i < UncodedLookahead.Length; i++)
+        List<bool> listBits = [];
+
+        for (int i = 0; i < bytes.Length; i++)
         {
-            Console.Write(UncodedLookahead[i]);
+            for (int j = 0, bit = (int)Math.Pow(2, 7); j < 8; j++, bit >>= 1)
+            {
+                listBits.Add((bytes[i] & bit) != 0);
+            }
         }
 
-        Console.WriteLine();
+        return listBits;
     }
 
-    private static void PrintSlidingWindow()
+
+    // Неиспользуемый код 
+    private static byte[] PairsToBytes(List<Node> listPairs)
     {
-        for (var i = 0; i < SlidingWindow.Length; i++)
+        List<byte> listBytes = [];
+
+        foreach (Node elem in listPairs)
         {
-            Console.Write(SlidingWindow[i]);
+            if (elem.Offset == 0 && elem.Length == 0)
+                listBytes.Add(elem.Symbol);
+            else
+            {
+                byte[] pair = new byte[(PairBits + 7) / 8];
+                for (int j = 0, offsetBits = OffsetBits; j < OffsetBits; j++, offsetBits--)
+                {
+                    int byteIndex = j / 8;
+                    int bitIndex = j % 8;
+                    int mask = elem.Offset & (1 << (offsetBits - 1));
+
+                    if (mask != 0)
+                        pair[byteIndex] |= (byte)(1 << (7 - bitIndex));
+                }
+                for (int j = OffsetBits, lengthBits = LengthBits; j < PairBits; j++, lengthBits--)
+                {
+                    int byteIndex = j / 8;
+                    int bitIndex = j % 8;
+                    int mask = elem.Length & (1 << (lengthBits - 1));
+
+                    if (mask != 0)
+                        pair[byteIndex] |= (byte)(1 << (7 - bitIndex));
+                }
+                listBytes.AddRange(pair);
+            }
         }
-        Console.WriteLine();
+
+        return [.. CreateFlagTable(listPairs), .. listBytes];
     }
-}
 
-public static class Constants
-{
-    public const int WindowSize = 4096; // 4096;
+    private static byte[] CreateFlagTable(List<Node> listPairs)
+    {
+        int flagTableSize = listPairs.Count;
+        int numBytes = (flagTableSize + 7) / 8;
+        byte[] bytes = BitConverter.GetBytes(flagTableSize);
 
-    public const int NullIndex = WindowSize + 1;
+        Array.Resize(ref bytes, sizeof(int) + numBytes);
 
-    public const int MaxUncoded = 2;
+        int i = sizeof(int);
+        byte mask = (byte)Math.Pow(2, 7);
+        byte sum = 0;
 
-    public const int MaxCoded = MaxUncoded + 16;
+        foreach (Node elem in listPairs)
+        {
+            if (elem.Offset != 0 && elem.Length != 0) sum |= mask;
 
-    public const int HashSize = 1024; // 1024;
+            if (mask > 1) mask >>= 1;
+            else
+            {
+                bytes[i++] = sum;
+                sum = 0;
+                mask = (byte)Math.Pow(2, 7);
+            }
+        }
+
+        if (mask != (byte)Math.Pow(2, 7))
+            bytes[i] = sum;
+
+        return bytes;
+    }
+
+    private static List<Node> BytesToPairs(byte[] data)
+    {
+        List<Node> listPairs = [];
+        bool[] bits = [.. BytesToBits(data)];
+        int flagTableSize = BitConverter.ToInt32(data, 0);
+        int j = ((flagTableSize + 7) / 8 + sizeof(int)) * 8;
+
+        for (int i = 0; i < flagTableSize; i++)
+        {
+            if (bits[i + sizeof(int) * 8] == false)
+            {
+                byte symbol = 0;
+
+                for (int k = 0; k < 8; k++)
+                {
+                    if (bits[j + k] == true)
+                        symbol |= (byte)(1 << (7 - k));
+                }
+                j += 8;
+
+                listPairs.Add(new Node(0, 0, symbol));
+            }
+            else
+            {
+                int offset = 0;
+                int length = 0;
+
+                for (int k = 0; k < OffsetBits; k++)
+                {
+                    if (bits[j + k] == true)
+                        offset |= 1 << (OffsetBits - 1 - k);
+                }
+                j += OffsetBits;
+
+                for (int k = 0; k < LengthBits; k++)
+                {
+                    if (bits[j + k] == true)
+                        length |= 1 << (LengthBits - 1 - k);
+                }
+                j += LengthBits;
+
+                if (PairBits % 8 != 0)
+                    j += 8 - PairBits % 8;
+
+                listPairs.Add(new Node(offset, length));
+            }
+        }
+
+        return listPairs;
+    }
+
 }
